@@ -28,6 +28,16 @@
 
 
     // define the dimensions and margins for the bar chart
+    var margin = { top: 10, right: 10, bottom: 100, left: 80 };
+    var width = 960 - margin.left - margin.right,
+      height = 500 - margin.top - margin.bottom;
+
+    // define function to parse time in years format
+    var parse_time_y = d3.timeParse('%Y');
+
+    // create scales x & y for X and Y axis and set their ranges
+    var xscale = d3.scaleLinear().range([0, width]);
+    var yscale = d3.scaleLinear().range([height, 0]);
 
 
     // append svg element to the body of the page
@@ -44,18 +54,197 @@
         "translate(" + margin.left + "," + margin.top + ")");
 
     // Fetch the data
-    var pathToCsv = "";
+    var pathToCsv = "average-rating.csv";
 
 
     d3.dsv(",", pathToCsv, function (d) {
       return {
         // format data attributes if required
+        name: d.name,
+        year: d.year,
+        avg_rating: Math.floor(+d.average_rating),
+        users_r: +d.users_rated
+
       }
     }).then(function (data) {
       console.log(data); // you should see the data in your browser's developer tools console
 
-      /* Create bar plot using data from csv */
+      /* Create line plot using data from csv */
+      /* x domain */
+      /* xscale.domain(d3.extent(data, function (d) {
+        return d.avg_rating;
+      })); */
+      xscale.domain([0, 9]);
 
+      /* y domain: needs count of board games for a given rating (selecting 6) */
+      const max_count = data.reduce((accumulator, obj) => {
+        if (obj.avg_rating == 6 && obj.year == '2016') {
+          return accumulator + 1;
+        }
+        return accumulator;
+      }, 0);
+      console.log(max_count);
+
+      yscale.domain([0, max_count]);
+
+
+      /* Aggregation of data */
+      year_list = ['2015', '2016', '2017', '2018', '2019'];
+
+      rating_list = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+
+
+      /* start making nested dictionary */
+      //Adding colors
+      var nest_data = d3.nest()
+        .key(function (d) { return d.year; })
+        .key(function (d) { return d.avg_rating; })
+        .sortKeys(d3.ascending)
+        .rollup(function (leaves) { return leaves.length; })
+        .entries(data);
+      /* .sort(function (a, b) { d3.ascending(Number(a.values), Number(b.values)); }); */
+
+      /* //Renaming key name to year */
+      for (i = 0; i < nest_data.length; i++) {
+        nest_data[i]['year'] = nest_data[i]['key']
+        delete nest_data[i]['key'];
+
+      };
+
+      /* renaming key name to rating */
+      /* for (i = 0; i < nest_data.length; i++) {
+        nest_data[i]['year'] = nest_data[i]['key']
+        delete nest_data[i]['key'];
+
+      }; */
+      /* console.log(nest_data[0]); */
+
+      /* Adding dummy 0 values where datapoint does not exist*/
+      for (i = 0; i < nest_data.length; i++) {
+        first_dict = nest_data[i];
+        values_list = first_dict['values'];
+        /* console.log(values_list) */
+        dict_rating_key = [];
+        for (j = 0; j < values_list.length; j++) {
+          /* rating_key = values_list[j]['key'] */
+          sec_dict = Number(values_list[j]['key'])
+          dict_rating_key.push(sec_dict)
+          /* console.log(sec_dict) */
+          /* rating_key = Object.values(values_list['key'])
+          console.log(rating_key); */
+        }
+        /* console.log(dict_rating_key) */
+
+        for (k = 0; k < rating_list.length; k++) {
+          if (dict_rating_key.indexOf(rating_list[k]) === -1) {
+            /* new_dict = { rating_list[k].toString(): 0} */
+            new_dict = new Object();
+            new_dict.key = rating_list[k].toString()
+            new_dict.value = 0;
+            /* console.log(new_dict) */
+            /* values_list.push(new_dict) */
+            values_list.splice(k, 0, new_dict)  /*adding dict at specific index*/
+          }
+        }
+        /* console.log(values_list[i]['key']) */
+        /* values_list.sortKeys(d3.ascending) */
+
+      }
+      /* console.log(nest_data); */
+      /* xscale.domain(d3.extent(nest_data, function (d) { */
+      /* return d.key;
+    })); */
+
+      nest_data_sy = [0, 4, 5, 7, 8].map(x => nest_data[x]);
+
+      console.log(nest_data_sy);
+
+      var color = d3.scaleOrdinal(d3.schemeCategory10);  //setting color scale
+
+      // Add lines, line labels, and colors to svg - create new elements based on your data
+      const line = d3.line()
+        .x(function (d) { return xscale(d.key); })
+        .y(function (d) { return yscale(d.value); });
+
+      lines = svg.append("g")
+        .attr("id", "lines")
+        .selectAll('.line')
+        .append("g")
+        .data(nest_data_sy)
+        .enter();
+
+      /* nest_data_sy.forEach(function (d) { */
+      lines.append("path")
+        .attr("class", "line")
+        .style("fill", "none")
+        .style("stroke", function (d, i) {     //adding colors to the lines
+          return d.color = color(i);
+        })
+        .attr("d", function (d) {
+          return line(d.values);
+        });
+      /* }); */
+
+      // Add the X Axis & text label
+      var xaxis = d3.axisBottom().scale(xscale);
+      /* .tickFormat(date_format); */
+      svg.append("g")
+        .attr("class", "axis")
+        .attr("id", "x-axis-lines")
+        .attr("transform", "translate(0," + height + ")")
+        .call(xaxis)
+        .append("text")
+        .attr("fill", "black")
+        .attr("transform", "translate(" + (width / 2) + " ," + (-height + 450) + ")")
+        .text("Rating");
+
+      // Add the Y Axis & text label
+      var yaxis = d3.axisLeft().scale(yscale)
+      svg.append("g")
+        .attr("class", "axis")
+        .attr("id", "y-axis-lines")
+        .call(yaxis)
+        .append("text")
+        .attr("fill", "black")
+        .attr("transform", "rotate(-90)")
+        .attr("x", -(height / 2))
+        .attr("y", -40)
+        .attr("text-anchor", "middle")
+        .text("Count");
+
+
+      //Display a filled circle for each rating-count data point
+
+      /* lines.selectAll('.data-circle') */
+      svg.append('g')
+        .attr('class', 'data-circle')
+        .attr('id', 'circles')
+        .data(nest_data_sy)
+        .enter()
+        .append('circle')
+
+        .attr('r', 2)
+        .attr("cx", function (d) {
+          return xscale(d.key);
+        })
+        .attr("cy", function (d) {
+          return yscale(d.value);
+        });
+
+      /* Adding chart title */
+      svg.append("text")
+        .attr("x", width / 2)
+        .attr("y", margin.top)
+        .attr("text-anchor", "middle")
+        .attr("id", "line_chart_title")
+        .text("Board games by Rating 2015-2019");
+
+      svg.append("text")
+        .attr("x", width / 1.2)
+        .attr("y", margin.top)
+        .attr("text-anchor", "middle")
+        .attr("id", "credit")
+        .text("namin30");
 
 
 
